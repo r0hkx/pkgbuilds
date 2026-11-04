@@ -1,0 +1,53 @@
+# Maintainer: r0hkx contact.r0hkx@gmail.com
+
+# noise-repellent 0.2.5 needs the libspecbleach 0.2.x API. The 0.3.x series
+# removed specbleach_adenoiser.h but kept the same SONAME, so this package
+# links the exact revision upstream pins in subprojects/libspecbleach.wrap
+# statically instead of using the system library.
+
+_name=noise-repellent
+_commit=8da6eb0f672390c4da369b0bcdc470fdb78e15f0            # tag v0.2.5
+_specbleach_commit=41d3f58310391e05ecfb8b7c9efb62ea2ba8ef05 # tag v0.2.0
+
+pkgname=noise-repellent-legacy
+pkgver=0.2.5
+pkgrel=1
+pkgdesc="LV2 plug-ins for broadband noise reduction (pre-JUCE release, bundles libspecbleach 0.2.0)"
+arch=(x86_64)
+url="https://github.com/lucianodato/noise-repellent"
+license=(LGPL-3.0-or-later LGPL-2.1-or-later)
+groups=(lv2-plugins pro-audio)
+depends=(fftw glibc lv2-host)
+makedepends=(git lv2 meson)
+provides=("$_name=$pkgver")
+conflicts=("$_name")
+source=("$_name::git+$url.git#commit=$_commit"
+        "libspecbleach::git+https://github.com/lucianodato/libspecbleach.git#commit=$_specbleach_commit")
+# Both sources are pinned to full commit hashes, which identify their content.
+sha256sums=('SKIP'
+            'SKIP')
+
+prepare() {
+  # Put the pinned library where Meson looks, so nothing is fetched at build time.
+  cp -a libspecbleach "$_name/subprojects/"
+}
+
+build() {
+  # Export only lv2_descriptor, so the linked-in copy can't clash with a
+  # system libspecbleach that the host has already loaded.
+  export LDFLAGS+=" -Wl,--exclude-libs,ALL"
+
+  # static_deps=false links libspecbleach in, but keeps FFTW as a shared library.
+  arch-meson "$_name" build \
+    -Dforce_bundled_libspecbleach=true \
+    -Dstatic_libspecbleach=true \
+    -Dlibspecbleach:static_deps=false
+  meson compile -C build
+}
+
+package() {
+  # Skip the subproject, or its headers and .a file end up in the package.
+  meson install -C build --destdir "$pkgdir" --skip-subprojects
+  install -vDm 644 "$_name/README.md" -t "$pkgdir/usr/share/doc/$pkgname/"
+}
+
